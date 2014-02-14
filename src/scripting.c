@@ -219,9 +219,9 @@ int luaRedisGenericCommand(lua_State *lua, int raise_error) {
     for (j = 0; j < argc; j++) {
         if (!lua_isstring(lua,j+1)) break;
         argv[j] = createStringObject((char*)lua_tostring(lua,j+1),
-                                     lua_strlen(lua,j+1));
+                                     lua_rawlen(lua,j+1));
     }
-    
+
     /* Check if one of the arguments passed by the Lua script
      * is not a string or an integer (lua_isstring() return true for
      * integers as well). */
@@ -476,7 +476,7 @@ void luaLoadLibraries(lua_State *lua) {
     luaLoadLib(lua, LUA_TABLIBNAME, luaopen_table);
     luaLoadLib(lua, LUA_STRLIBNAME, luaopen_string);
     luaLoadLib(lua, LUA_MATHLIBNAME, luaopen_math);
-    luaLoadLib(lua, LUA_DBLIBNAME, luaopen_debug); 
+    luaLoadLib(lua, LUA_DBLIBNAME, luaopen_debug);
     luaLoadLib(lua, "cjson", luaopen_cjson);
     luaLoadLib(lua, "struct", luaopen_struct);
     luaLoadLib(lua, "cmsgpack", luaopen_cmsgpack);
@@ -536,7 +536,7 @@ void scriptingEnableGlobalsProtection(lua_State *lua) {
  * assuming that we call scriptingRelease() before.
  * See scriptingReset() for more information. */
 void scriptingInit(void) {
-    lua_State *lua = lua_open();
+    lua_State *lua = luaL_newstate();
 
     luaLoadLibraries(lua);
     luaRemoveUnsupportedFunctions(lua);
@@ -597,17 +597,17 @@ void scriptingInit(void) {
     lua_setglobal(lua,"redis");
 
     /* Replace math.random and math.randomseed with our implementations. */
-    lua_getglobal(lua,"math");
+    // lua_getglobal(lua,"math");
 
-    lua_pushstring(lua,"random");
-    lua_pushcfunction(lua,redis_math_random);
-    lua_settable(lua,-3);
+    // lua_pushstring(lua,"random");
+    // lua_pushcfunction(lua,redis_math_random);
+    // lua_settable(lua,-3);
 
-    lua_pushstring(lua,"randomseed");
-    lua_pushcfunction(lua,redis_math_randomseed);
-    lua_settable(lua,-3);
+    // lua_pushstring(lua,"randomseed");
+    // lua_pushcfunction(lua,redis_math_randomseed);
+    // lua_settable(lua,-3);
 
-    lua_setglobal(lua,"math");
+    // lua_setglobal(lua,"math");
 
     /* Add a helper function that we use to sort the multi bulk output of non
      * deterministic commands, when containing 'false' elements. */
@@ -638,7 +638,7 @@ void scriptingInit(void) {
                                 "  end\n"
                                 "end\n";
         luaL_loadbuffer(lua,errh_func,strlen(errh_func),"@err_handler_def");
-        lua_pcall(lua,0,0,0);
+        redisAssert(lua_pcall(lua,0,0,0) == LUA_OK);
     }
 
     /* Create the (non connected) client that we use to execute Redis commands
@@ -653,7 +653,7 @@ void scriptingInit(void) {
     /* Lua beginners ofter don't use "local", this is likely to introduce
      * subtle bugs in their code. To prevent problems we protect accesses
      * to global variables. */
-    scriptingEnableGlobalsProtection(lua);
+    // scriptingEnableGlobalsProtection(lua);
 
     server.lua = lua;
 }
@@ -698,7 +698,7 @@ void luaReplyToRedisReply(redisClient *c, lua_State *lua) {
 
     switch(t) {
     case LUA_TSTRING:
-        addReplyBulkCBuffer(c,(char*)lua_tostring(lua,-1),lua_strlen(lua,-1));
+        addReplyBulkCBuffer(c,(char*)lua_tostring(lua,-1),lua_rawlen(lua,-1));
         break;
     case LUA_TBOOLEAN:
         addReply(c,lua_toboolean(lua,-1) ? shared.cone : shared.nullbulk);
@@ -796,7 +796,7 @@ int luaCreateFunction(redisClient *c, lua_State *lua, char *funcname, robj *body
         return REDIS_ERR;
     }
     sdsfree(funcdef);
-    if (lua_pcall(lua,0,0,0)) {
+    if (lua_pcall(lua,0,0,0) != LUA_OK) {
         addReplyErrorFormat(c,"Error running script (new function): %s\n",
             lua_tostring(lua,-1));
         lua_pop(lua,1);
@@ -814,6 +814,7 @@ int luaCreateFunction(redisClient *c, lua_State *lua, char *funcname, robj *body
     }
     return REDIS_OK;
 }
+
 
 void evalGenericCommand(redisClient *c, int evalsha) {
     lua_State *lua = server.lua;
