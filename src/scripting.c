@@ -46,6 +46,35 @@ int redis_math_random (lua_State *L);
 int redis_math_randomseed (lua_State *L);
 void sha1hex(char *digest, char *script, size_t len);
 
+static void stackDump(lua_State *L) {
+  int i;
+  redisLog(REDIS_WARNING,"Dumping stack!!");
+  int top = lua_gettop(L);
+  for (i = 1; i <= top; i++) {  /* repeat for each level */
+    int t = lua_type(L, i);
+    switch (t) {
+
+      case LUA_TSTRING:  /* strings */
+        redisLog(REDIS_WARNING,"%d: `%s'", i, lua_tostring(L, i));
+        break;
+
+      case LUA_TBOOLEAN:  /* booleans */
+        redisLog(REDIS_WARNING,"%d: %s", i, lua_toboolean(L, i) ? "true" : "false");
+        break;
+
+      case LUA_TNUMBER:  /* numbers */
+        redisLog(REDIS_WARNING,"%d: %g", i, lua_tonumber(L, i));
+        break;
+
+      default:  /* other values */
+        redisLog(REDIS_WARNING,"%d: %s", i, lua_typename(L, t));
+        break;
+
+    }
+  }
+}
+
+
 /* Take a Redis reply in the Redis protocol format and convert it into a
  * Lua type. Thanks to this function, and the introduction of not connected
  * clients, it is trivial to implement the redis() lua function.
@@ -639,6 +668,7 @@ void scriptingInit(void) {
                                 "end\n";
         luaL_loadbuffer(lua,errh_func,strlen(errh_func),"@err_handler_def");
         redisAssert(lua_pcall(lua,0,0,0) == LUA_OK);
+        stackDump(lua);
     }
 
     /* Create the (non connected) client that we use to execute Redis commands
@@ -795,6 +825,10 @@ int luaCreateFunction(redisClient *c, lua_State *lua, char *funcname, robj *body
         sdsfree(funcdef);
         return REDIS_ERR;
     }
+    printf(funcdef);
+    printf("\n");
+    stackDump(lua);
+
     sdsfree(funcdef);
     if (lua_pcall(lua,0,0,0) != LUA_OK) {
         addReplyErrorFormat(c,"Error running script (new function): %s\n",
@@ -863,12 +897,15 @@ void evalGenericCommand(redisClient *c, int evalsha) {
     }
 
     /* Push the pcall error handler function on the stack. */
+    stackDump(lua);
     lua_getglobal(lua, "__redis__err__handler");
+    stackDump(lua);
 
     /* Try to lookup the Lua function */
-    lua_getglobal(lua, funcname);
-    if (lua_isnil(lua,-1)) {
-        lua_pop(lua,1); /* remove the nil from the stack */
+    // lua_getglobal(lua, funcname);
+    // if (lua_isnil(lua,-1)) {
+    if (1) {
+        // lua_pop(lua,1); /* remove the nil from the stack */
         /* Function not defined... let's define it if we have the
          * body of the function. If this is an EVALSHA call we can just
          * return an error. */
@@ -888,6 +925,9 @@ void evalGenericCommand(redisClient *c, int evalsha) {
         redisAssert(!lua_isnil(lua,-1));
     }
 
+    redisLog(REDIS_WARNING,"Pronto para executar");
+    stackDump(lua);
+
     /* Populate the argv and keys table accordingly to the arguments that
      * EVAL received. */
     luaSetGlobalArray(lua,"KEYS",c->argv+3,numkeys);
@@ -895,7 +935,7 @@ void evalGenericCommand(redisClient *c, int evalsha) {
 
     /* Select the right DB in the context of the Lua client */
     selectDb(server.lua_client,c->db->id);
-    
+
     /* Set a hook in order to be able to stop the script execution if it
      * is running for too much time.
      * We set the hook only if the time limit is enabled as the hook will
