@@ -501,11 +501,14 @@ LUALIB_API int (luaopen_struct) (lua_State *L);
 LUALIB_API int (luaopen_cmsgpack) (lua_State *L);
 
 void luaLoadLibraries(lua_State *lua) {
-    luaLoadLib(lua, "", luaopen_base);
-    luaLoadLib(lua, LUA_TABLIBNAME, luaopen_table);
-    luaLoadLib(lua, LUA_STRLIBNAME, luaopen_string);
-    luaLoadLib(lua, LUA_MATHLIBNAME, luaopen_math);
-    luaLoadLib(lua, LUA_DBLIBNAME, luaopen_debug);
+    // luaLoadLib(lua, "", luaopen_base);
+    // luaLoadLib(lua, LUA_TABLIBNAME, luaopen_table);
+    // luaLoadLib(lua, LUA_STRLIBNAME, luaopen_string);
+    // luaLoadLib(lua, LUA_MATHLIBNAME, luaopen_math);
+    // luaLoadLib(lua, LUA_DBLIBNAME, luaopen_debug);
+    // luaLoadLib(lua, LUA_COLIBNAME, luaopen_debug);
+
+    luaL_openlibs(lua);
     luaLoadLib(lua, "cjson", luaopen_cjson);
     luaLoadLib(lua, "struct", luaopen_struct);
     luaLoadLib(lua, "cmsgpack", luaopen_cmsgpack);
@@ -850,7 +853,7 @@ int luaCreateFunction(redisClient *c, lua_State *lua, char *funcname, robj *body
 }
 
 
-void evalGenericCommand(redisClient *c, int evalsha) {
+void evalGenericCommand(redisClient *c, int evalsha, int evalcoroutine) {
     lua_State *lua = server.lua;
     char funcname[43];
     long long numkeys;
@@ -897,15 +900,14 @@ void evalGenericCommand(redisClient *c, int evalsha) {
     }
 
     /* Push the pcall error handler function on the stack. */
-    stackDump(lua);
-    lua_getglobal(lua, "__redis__err__handler");
-    stackDump(lua);
+    // stackDump(lua);
+    // lua_getglobal(lua, "__redis__err__handler");
+    // stackDump(lua);
 
     /* Try to lookup the Lua function */
-    // lua_getglobal(lua, funcname);
-    // if (lua_isnil(lua,-1)) {
-    if (1) {
-        // lua_pop(lua,1); /* remove the nil from the stack */
+     lua_getglobal(lua, funcname);
+     if (lua_isnil(lua,-1)) {
+         lua_pop(lua,1); /* remove the nil from the stack */
         /* Function not defined... let's define it if we have the
          * body of the function. If this is an EVALSHA call we can just
          * return an error. */
@@ -951,7 +953,7 @@ void evalGenericCommand(redisClient *c, int evalsha) {
     /* At this point whether this script was never seen before or if it was
      * already defined, we can call it. We have zero arguments and expect
      * a single return value. */
-    err = lua_pcall(lua,0,1,-2);
+    err = lua_pcall(lua,0,1,0);
 
     /* Perform some cleanup that we need to do both on error and success. */
     if (delhook) lua_sethook(lua,luaMaskCountHook,0,0); /* Disable hook */
@@ -973,8 +975,29 @@ void evalGenericCommand(redisClient *c, int evalsha) {
     } else {
         /* On success convert the Lua return value into Redis protocol, and
          * send it to * the client. */
-        luaReplyToRedisReply(c,lua); /* Convert and consume the reply. */
-        lua_pop(lua,1); /* Remove the error handler. */
+        if (evalcoroutine) {
+            void *replylen = addDeferredMultiBulkLength(c);
+            int mbulklen = 0;
+            lua_setglobal(lua, "minha_corotina");
+
+            while (!err) {
+                lua_getglobal(lua, "minha_corotina");
+                err = lua_pcall(lua,0,1,0);  // resume coroutine
+                if (err) {
+                    addReplyErrorFormat(c,"Error running script (call to %s): %s\n",
+                        funcname, lua_tostring(lua,-1));
+                } else if (!lua_isnil(lua,-1)) {
+                    luaReplyToRedisReply(c,lua);
+                    mbulklen++;
+                } else {
+                    break;
+                }
+            }
+            setDeferredMultiBulkLength(c,replylen,mbulklen);
+        } else {
+            luaReplyToRedisReply(c,lua); /* Convert and consume the reply. */
+        }
+        //lua_pop(lua,1); /* Remove the error handler. */
     }
 
     /* EVALSHA should be propagated to Slave and AOF file as full EVAL, unless
@@ -1004,8 +1027,12 @@ void evalGenericCommand(redisClient *c, int evalsha) {
     }
 }
 
+void evalCoroutineCommand(redisClient *c) {
+    evalGenericCommand(c,0,1);
+}
+
 void evalCommand(redisClient *c) {
-    evalGenericCommand(c,0);
+    evalGenericCommand(c,0,0);
 }
 
 void evalShaCommand(redisClient *c) {
@@ -1017,7 +1044,7 @@ void evalShaCommand(redisClient *c) {
         addReply(c, shared.noscripterr);
         return;
     }
-    evalGenericCommand(c,1);
+    evalGenericCommand(c,1,0);
 }
 
 /* We replace math.random() with our implementation that is not affected
