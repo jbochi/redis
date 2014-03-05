@@ -181,7 +181,7 @@ void luaSortArray(lua_State *lua) {
     lua_pushstring(lua,"sort");
     lua_gettable(lua,-2);       /* Stack: array, table, table.sort */
     lua_pushvalue(lua,-3);      /* Stack: array, table, table.sort, array */
-    if (lua_pcall(lua,1,0,0)) {
+    if (lua_pcall(lua,1,0,0) != LUA_OK) {
         /* Stack: array, table, error */
 
         /* We are not interested in the error, we assume that the problem is
@@ -529,7 +529,7 @@ void scriptingEnableGlobalsProtection(lua_State *lua) {
 
     for (j = 0; s[j] != NULL; j++) code = sdscatlen(code,s[j],strlen(s[j]));
     luaL_loadbuffer(lua,code,sdslen(code),"@enable_strict_lua");
-    lua_pcall(lua,0,0,0);
+    redisAssert(lua_pcall(lua,0,0,0) == LUA_OK);
     sdsfree(code);
 }
 
@@ -620,7 +620,7 @@ void scriptingInit(void) {
                                 "  return a<b\n"
                                 "end\n";
         luaL_loadbuffer(lua,compare_func,strlen(compare_func),"@cmp_func_def");
-        lua_pcall(lua,0,0,0);
+        redisAssert(lua_pcall(lua,0,0,0) == LUA_OK);
     }
 
     /* Add a helper function we use for pcall error reporting.
