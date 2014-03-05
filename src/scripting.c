@@ -462,9 +462,8 @@ void luaMaskCountHook(lua_State *lua, lua_Debug *ar) {
 }
 
 void luaLoadLib(lua_State *lua, const char *libname, lua_CFunction luafunc) {
-  lua_pushcfunction(lua, luafunc);
-  lua_pushstring(lua, libname);
-  lua_call(lua, 1, 0);
+  luaL_requiref(lua, libname, luafunc, 1);
+  lua_pop(lua, 1);
 }
 
 LUALIB_API int (luaopen_cjson) (lua_State *L);
@@ -472,11 +471,13 @@ LUALIB_API int (luaopen_struct) (lua_State *L);
 LUALIB_API int (luaopen_cmsgpack) (lua_State *L);
 
 void luaLoadLibraries(lua_State *lua) {
-    luaLoadLib(lua, "", luaopen_base);
+    luaLoadLib(lua, "_G", luaopen_base);
     luaLoadLib(lua, LUA_TABLIBNAME, luaopen_table);
     luaLoadLib(lua, LUA_STRLIBNAME, luaopen_string);
     luaLoadLib(lua, LUA_MATHLIBNAME, luaopen_math);
     luaLoadLib(lua, LUA_DBLIBNAME, luaopen_debug);
+    luaLoadLib(lua, LUA_COLIBNAME, luaopen_coroutine);
+    luaLoadLib(lua, LUA_BITLIBNAME, luaopen_bit32);
     luaLoadLib(lua, "cjson", luaopen_cjson);
     luaLoadLib(lua, "struct", luaopen_struct);
     luaLoadLib(lua, "cmsgpack", luaopen_cmsgpack);
@@ -484,6 +485,7 @@ void luaLoadLibraries(lua_State *lua) {
 #if 0 /* Stuff that we don't load currently, for sandboxing concerns. */
     luaLoadLib(lua, LUA_LOADLIBNAME, luaopen_package);
     luaLoadLib(lua, LUA_OSLIBNAME, luaopen_os);
+    luaLoadLib(lua, LUA_IOLIBNAME, luaopen_io);
 #endif
 }
 
