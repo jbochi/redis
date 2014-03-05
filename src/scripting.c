@@ -599,17 +599,17 @@ void scriptingInit(void) {
     lua_setglobal(lua,"redis");
 
     /* Replace math.random and math.randomseed with our implementations. */
-    // lua_getglobal(lua,"math");
+    lua_getglobal(lua,"math");
 
-    // lua_pushstring(lua,"random");
-    // lua_pushcfunction(lua,redis_math_random);
-    // lua_settable(lua,-3);
+    lua_pushstring(lua,"random");
+    lua_pushcfunction(lua,redis_math_random);
+    lua_settable(lua,-3);
 
-    // lua_pushstring(lua,"randomseed");
-    // lua_pushcfunction(lua,redis_math_randomseed);
-    // lua_settable(lua,-3);
+    lua_pushstring(lua,"randomseed");
+    lua_pushcfunction(lua,redis_math_randomseed);
+    lua_settable(lua,-3);
 
-    // lua_setglobal(lua,"math");
+    lua_setglobal(lua,"math");
 
     /* Add a helper function that we use to sort the multi bulk output of non
      * deterministic commands, when containing 'false' elements. */
@@ -655,7 +655,7 @@ void scriptingInit(void) {
     /* Lua beginners ofter don't use "local", this is likely to introduce
      * subtle bugs in their code. To prevent problems we protect accesses
      * to global variables. */
-    // scriptingEnableGlobalsProtection(lua);
+    scriptingEnableGlobalsProtection(lua);
 
     server.lua = lua;
 }
