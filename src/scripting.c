@@ -751,6 +751,30 @@ void luaReplyToRedisReply(redisClient *c, lua_State *lua) {
             setDeferredMultiBulkLength(c,replylen,mbulklen);
         }
         break;
+    case LUA_TFUNCTION:
+        /* We treat functions as iterators, e.g., we call it
+         * until a nil is found */
+        {
+            void *replylen = addDeferredMultiBulkLength(c);
+            int mbulklen = 0;
+
+            lua_setglobal(lua, "__redis_iterator");
+            while (1) {
+                lua_getglobal(lua, "__redis_iterator");
+                if (lua_pcall(lua,0,1,0)) {
+                    break; //TODO: Tratar erro
+                }
+                if (lua_isnil(lua,-1)) {
+                    break;
+                }
+                luaReplyToRedisReply(c,lua);
+                mbulklen++;
+            }
+            lua_pushnil(lua);
+            lua_setglobal(lua, "__redis_iterator");
+            setDeferredMultiBulkLength(c,replylen,mbulklen);
+        }
+        break;
     default:
         addReply(c,shared.nullbulk);
     }
