@@ -752,7 +752,8 @@ void luaReplyToRedisReply(redisClient *c, lua_State *lua) {
         }
         break;
     case LUA_TFUNCTION:
-        /* We treat functions as iterators, e.g., we call it
+        /* We treat functions as iterators, i.e., we call them
+         * repeatedly, adding to the reply each returned value
          * until a nil is found */
         {
             void *replylen = addDeferredMultiBulkLength(c);
