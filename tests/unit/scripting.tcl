@@ -110,6 +110,19 @@ start_server {tags {"scripting"}} {
         } 0
     } {boolean 1}
 
+    test {EVAL - Redis iterator reply -> Lua type conversion} {
+        r eval {
+            local function range(n)
+              local i = 0
+              return function ()
+                i = i + 1
+                if i <= n then return i end
+              end
+            end
+            return range(5)
+        } 0
+    } {1 2 3 4 5}
+
     test {EVAL - Is Lua affecting the currently selected DB?} {
         r set mykey "this is DB 9"
         r select 10
