@@ -34,6 +34,19 @@ start_server {tags {"scripting"}} {
         r eval {return {1,2,3,'ciao',{1,2}}} 0
     } {1 2 3 ciao {1 2}}
 
+    test {EVAL - Lua iterator -> Redis protocol type conversion} {
+        r eval {
+            local function range(n)
+              local i = 0
+              return function ()
+                i = i + 1
+                if i <= n then return i end
+              end
+            end
+            return range(5)
+        } 0
+    } {1 2 3 4 5}
+
     test {EVAL - Are the KEYS and ARGV arrays populated correctly?} {
         r eval {return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}} 2 a b c d
     } {a b c d}
@@ -109,19 +122,6 @@ start_server {tags {"scripting"}} {
             return {type(foo),foo == false}
         } 0
     } {boolean 1}
-
-    test {EVAL - Redis iterator reply -> Lua type conversion} {
-        r eval {
-            local function range(n)
-              local i = 0
-              return function ()
-                i = i + 1
-                if i <= n then return i end
-              end
-            end
-            return range(5)
-        } 0
-    } {1 2 3 4 5}
 
     test {EVAL - Is Lua affecting the currently selected DB?} {
         r set mykey "this is DB 9"
