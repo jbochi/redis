@@ -762,8 +762,11 @@ void luaReplyToRedisReply(redisClient *c, lua_State *lua) {
             lua_setglobal(lua, "__redis_iterator");
             while (1) {
                 lua_getglobal(lua, "__redis_iterator");
-                if (lua_pcall(lua,0,1,0)) {
-                    break; //TODO: Tratar erro
+                if (lua_pcall(lua,0,1,-2)) {
+                    addReplyErrorFormat(c,"Error running script: %s\n",
+                        lua_tostring(lua,-1));
+                    mbulklen++;
+                    break;
                 }
                 if (lua_isnil(lua,-1)) {
                     break;

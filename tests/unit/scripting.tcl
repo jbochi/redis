@@ -35,17 +35,24 @@ start_server {tags {"scripting"}} {
     } {1 2 3 ciao {1 2}}
 
     test {EVAL - Lua iterator -> Redis protocol type conversion} {
-        r eval {
-            local function range(n)
-              local i = 0
-              return function ()
-                i = i + 1
-                if i <= n then return i end
-              end
-            end
-            return range(5)
-        } 0
+      r eval {
+        local function range(n)
+          local i = 0
+          return function ()
+            i = i + 1
+            if i <= n then return i end
+          end
+        end
+        return range(5)
+      } 0
     } {1 2 3 4 5}
+
+    test {EVAL - Lua iterator error reply -> Redis protocol type conversion} {
+        catch {
+          r eval {return function () return error('this is an error') end} 0
+        } e
+        set _ $e
+    } {*this is an error*}
 
     test {EVAL - Are the KEYS and ARGV arrays populated correctly?} {
         r eval {return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}} 2 a b c d
