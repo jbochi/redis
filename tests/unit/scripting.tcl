@@ -54,6 +54,14 @@ start_server {tags {"scripting"}} {
         set _ $e
     } {*this is an error*}
 
+    test {EVAL - Lua empty iterator -> Redis protocol type conversion} {
+      r eval {
+          return function ()
+            return nil
+          end
+      } 0
+    } {}
+
     test {EVAL - Are the KEYS and ARGV arrays populated correctly?} {
         r eval {return {KEYS[1],KEYS[2],ARGV[1],ARGV[2]}} 2 a b c d
     } {a b c d}
@@ -342,6 +350,21 @@ start_server {tags {"scripting"}} {
         set rd [redis_deferring_client]
         r config set lua-time-limit 10
         $rd eval {while true do end} 0
+        after 200
+        catch {r ping} e
+        assert_match {BUSY*} $e
+        r script kill
+        assert_equal [r ping] "PONG"
+    }
+
+    test {Timedout read-only iterator script can be killed by SCRIPT KILL} {
+        set rd [redis_deferring_client]
+        r config set lua-time-limit 10
+        $rd eval {
+          return function ()
+            while true do end
+          end
+        } 0
         after 200
         catch {r ping} e
         assert_match {BUSY*} $e
