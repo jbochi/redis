@@ -180,6 +180,36 @@ start_server {tags {"scripting"}} {
         set e
     } {*against a key*}
 
+    test {EVAL - redis metamethod is able to call Redis API} {
+        r set mykey myval
+        r eval {return redis.get('mykey')} 0
+    } {myval}
+
+    test {EVAL - redis metamethod variant raises a Lua error on Redis cmd error (1)} {
+        set e {}
+        catch {
+            r eval "redis.nosuchcommand()" 0
+        } e
+        set e
+    } {*Unknown Redis*}
+
+    test {EVAL - redis metamethod variant raises a Lua error on Redis cmd error (1)} {
+        set e {}
+        catch {
+            r eval "redis.get('a','b','c')" 0
+        } e
+        set e
+    } {*number of args*}
+
+    test {EVAL - redis metamethod variant raises a Lua error on Redis cmd error (1)} {
+        set e {}
+        r set foo bar
+        catch {
+            r eval "redis.lpush('foo','val')" 0
+        } e
+        set e
+    } {*against a key*}
+
     test {SCRIPTING FLUSH - is able to clear the scripts cache?} {
         r set mykey myval
         set v [r evalsha 9bd632c7d33e571e9f24556ebed26c3479a87129 0]

@@ -596,6 +596,20 @@ void scriptingInit(void) {
     /* Finally set the table as 'redis' global var. */
     lua_setglobal(lua,"redis");
 
+    /* Set a metatable for 'redis' to allow the syntax
+     * redis.get(key) as equivalent of redis.call('get', key). */
+    {
+        char *metatable =       "local mt = {};\n"
+                                "mt.__index = function(r, cmd)\n"
+                                "  return function (...)\n"
+                                "    return r.call(cmd, ...)\n"
+                                "  end\n"
+                                "end\n"
+                                "setmetatable(redis, mt)";
+        luaL_loadbuffer(lua,metatable,strlen(metatable),"@metatable_def");
+        lua_pcall(lua,0,0,0);
+    }
+
     /* Replace math.random and math.randomseed with our implementations. */
     lua_getglobal(lua,"math");
 
