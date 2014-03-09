@@ -599,7 +599,7 @@ void scriptingInit(void) {
     /* Set a metatable for 'redis' to allow the syntax
      * redis.get(key) as equivalent of redis.call('get', key). */
     {
-        char *metatable =       "local mt = {};\n"
+        char *metatable =       "local mt = {}\n"
                                 "mt.__index = function(r, cmd)\n"
                                 "  return function (...)\n"
                                 "    return r.call(cmd, ...)\n"
@@ -636,14 +636,18 @@ void scriptingInit(void) {
     }
 
     /* Add a helper function we use for pcall error reporting.
-     * Note that when the error is in the C function we want to report the
-     * information about the caller, that's what makes sense from the point
-     * of view of the user debugging a script. */
+     * Note that when the error is in the C function or a metamethod,
+     * we want to report the information about the caller,
+     * that's what makes sense from the point of view of the
+     * user debugging a script. */
     {
         char *errh_func =       "function __redis__err__handler(err)\n"
                                 "  local i = debug.getinfo(2,'nSl')\n"
                                 "  if i and i.what == 'C' then\n"
                                 "    i = debug.getinfo(3,'nSl')\n"
+                                "    if i and i.source == '@metatable_def' then\n"
+                                "      i = debug.getinfo(4, 'nSl')\n"
+                                "    end\n"
                                 "  end\n"
                                 "  if i then\n"
                                 "    return i.source .. ':' .. i.currentline .. ': ' .. err\n"
