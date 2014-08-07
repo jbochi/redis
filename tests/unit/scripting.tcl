@@ -358,6 +358,15 @@ start_server {tags {"scripting"}} {
             return redis.call("get", "key")
         } 0
     } {12039611435714932082}
+
+    test {Bigint support with bc} {
+        r eval {
+            redis.call("set", "key", "12039611435714932082")
+            local number = bc.number(redis.call("get", "key"))
+            number = number * 2
+            return number:tostring()
+        } 0
+    } {24079222871429864164}
 }
 
 # Start a new server since the last test in this stanza will kill the
