@@ -618,7 +618,11 @@ typedef struct evalThread {
     lua_State *lua_thread;     /* The lua thread where async scripts are run */
     struct redisClient *lua_client;   /* The "fake client" to query Redis from Lua */
     pthread_t thread;
-
+    pthread_mutex_t executor_mutex; /* The mutex to allow async scripts to yield
+                                        and run commands inside the event loop. */
+    pthread_cond_t executor_cond; /* The condition variable that signals that the
+                                    command has been executed and that the thread
+                                    can be resumed. */
     // Current script variables:
     mstime_t lua_time_start;  /* Start time of script, milliseconds time */
     int lua_write_dirty;  /* True if a write command was called during the
@@ -861,10 +865,14 @@ struct redisServer {
     evalThread *eval_thread;
     list *evalasync_executors;      /* The list of EVALASYNC workers */
     list *evalasync_tasks;          /* The list of EVALASYNC tasks to be executed */
+    list *command_executor_tasks;   /* The list of commands to be executed */
     pthread_mutex_t lua_scripts_mutex;
     pthread_mutex_t call_mutex;
     pthread_mutex_t evalasync_queue_mutex;
     pthread_cond_t evalasync_queue_cond;
+    pthread_mutex_t command_executor_mutex;
+    pthread_cond_t command_executor_signal;
+    pthread_t *command_executor;
 
     /* Assert & bug reporting */
     char *assert_failed;

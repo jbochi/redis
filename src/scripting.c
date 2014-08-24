@@ -914,9 +914,16 @@ void luaCallAndReply(evalTask *t) {
 
     while (status == LUA_YIELD) {
         if (evalasync) {
-            pthread_mutex_lock(&server.call_mutex);
-            t->script_cmd_reply = luaRedisExecCommand(th->lua_thread, 1);
-            pthread_mutex_unlock(&server.call_mutex);
+            // Add the task to the executor worker and
+            // wait for the command to be executed
+            pthread_mutex_lock(&th->executor_mutex);
+            pthread_mutex_lock(&server.command_executor_mutex);
+            listAddNodeTail(server.command_executor_tasks,t);
+            pthread_cond_signal(&server.command_executor_signal);
+            pthread_mutex_unlock(&server.command_executor_mutex);
+
+            pthread_cond_wait(&th->executor_cond, &th->executor_mutex);
+            pthread_mutex_unlock(&th->executor_mutex);
         }
         status = lua_resume(lua,NULL,0);
     }
@@ -1149,12 +1156,15 @@ evalThread *createEvalThread() {
     th->lua_random_dirty = 0;
     th->lua_timedout = 0;
     th->lua_kill = 0;
-
+    pthread_mutex_init(&th->executor_mutex, NULL);
+    pthread_cond_init(&th->executor_cond, NULL);
     return th;
 }
 
 void releaseEvalThread(evalThread *th) {
     lua_close(th->lua);
+    pthread_mutex_destroy(&th->executor_mutex);
+    pthread_cond_destroy(&th->executor_cond);
     if (th->lua_client) {
         // freeClientAsync(th->lua_client); crashing the server
         // cleaning client manually;
@@ -1187,6 +1197,42 @@ void addEvalAsyncTask(evalTask *t) {
     pthread_mutex_unlock(&server.evalasync_queue_mutex);
 }
 
+static void *script_command_executor(void * threadarg) {
+    while (1) {
+        pthread_mutex_lock(&server.command_executor_mutex);
+        while (listLength(server.command_executor_tasks) == 0) {
+            pthread_cond_wait(&server.command_executor_signal, &server.command_executor_mutex);
+        }
+
+        // Get a pending command
+        listNode *first = listFirst(server.command_executor_tasks);
+        evalTask *t = first->value;
+        listDelNode(server.command_executor_tasks, first);
+        pthread_mutex_unlock(&server.command_executor_mutex);
+
+        // Get the eval thread and the execution lock
+        evalThread *th = t->eval_thread;
+        pthread_mutex_lock(&th->executor_mutex);
+
+        // Execute the Redis command
+        pthread_mutex_lock(&server.call_mutex);
+        t->script_cmd_reply = luaRedisExecCommand(th->lua_thread, 1);
+        pthread_mutex_unlock(&server.call_mutex);
+
+        // Signal the thread that requested the execution
+        pthread_cond_signal(&th->executor_cond);
+        pthread_mutex_unlock(&th->executor_mutex);
+    }
+}
+
+
+pthread_t *createCaller() {
+    pthread_t *thread = zmalloc(sizeof(pthread_t));
+    pthread_create(thread, NULL, script_command_executor, NULL);
+    return thread;
+}
+
+
 /* Initialize the scripting environment.
  * It is possible to call this function to reset the scripting environment
  * assuming that we call scriptingRelease() before.
@@ -1206,7 +1252,13 @@ void scriptingInit(void) {
     pthread_mutex_init(&server.evalasync_queue_mutex, NULL);
     pthread_cond_init(&server.evalasync_queue_cond, NULL);
     server.evalasync_tasks = listCreate();
+
+    pthread_mutex_init(&server.command_executor_mutex, NULL);
+    pthread_cond_init(&server.command_executor_signal, NULL);
+    server.command_executor_tasks = listCreate();
+
     server.evalasync_executors = listCreate();
+    server.command_executor = createCaller();
 
     for (i = 0; i < NUM_LUA_WORKERS; i++) {
         evalThread *th = createEvalAsyncExecutor();
@@ -1240,13 +1292,23 @@ void scriptingRelease(void) {
     listReleaseIterator(iter);
     listRelease(server.evalasync_executors);
 
+    // Release command executor
+    pthread_cancel(*server.command_executor);
+    zfree(server.command_executor);
+
     // Assert there are no pending tasks and release list
     redisAssert(listLength(server.evalasync_tasks) == 0);
     listRelease(server.evalasync_tasks);
 
+    // Assert there are no pending executions and release list
+    redisAssert(listLength(server.command_executor_tasks) == 0);
+    listRelease(server.command_executor_tasks);
+
     // Release server globals
     pthread_mutex_destroy(&server.evalasync_queue_mutex);
     pthread_cond_destroy(&server.evalasync_queue_cond);
+    pthread_mutex_destroy(&server.command_executor_mutex);
+    pthread_cond_destroy(&server.command_executor_signal);
     pthread_mutex_destroy(&server.call_mutex);
     pthread_mutex_destroy(&server.lua_scripts_mutex);
     dictRelease(server.lua_scripts);
