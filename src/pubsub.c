@@ -327,10 +327,41 @@ void ssubscribeCommand(redisClient *c) {
     script_client->name = scriptSHA1;
     incrRefCount(scriptSHA1);
 
-    for (j = 2; j < c->argc; j++)
+    for (j = 2; j < c->argc; j++) {
         pubsubSubscribeChannel(script_client,c->argv[j]);
+    }
 
     addReply(c,shared.ok);
+}
+
+void sunsubscribeCommand(redisClient *c) {
+  int j;
+  dictEntry *de;
+  robj *channel;
+  robj *scriptSHA1 = c->argv[1];
+  list *clients;
+  int deleted = 0;
+
+  for (j = 2; j < c->argc; j++) {
+      channel = c->argv[2];
+      de = dictFind(server.pubsub_channels,channel);
+      if (de != NULL) {
+          clients = dictGetVal(de);
+          listNode *ln;
+          listIter li;
+
+          listRewind(clients,&li);
+          while ((ln = listNext(&li)) != NULL) {
+            redisClient *c = ln->value;
+            if ((c->flags & REDIS_LUA_PUBSUB_CLIENT) &&
+                equalStringObjects(c->name, scriptSHA1)) {
+                  listDelNode(clients,ln);
+                  deleted++;
+            }
+          }
+      }
+  }
+  addReplyLongLong(c,deleted);
 }
 
 void publishCommand(redisClient *c) {

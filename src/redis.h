@@ -1478,6 +1478,7 @@ void unsubscribeCommand(redisClient *c);
 void psubscribeCommand(redisClient *c);
 void punsubscribeCommand(redisClient *c);
 void ssubscribeCommand(redisClient *c);
+void sunsubscribeCommand(redisClient *c);
 void publishCommand(redisClient *c);
 void pubsubCommand(redisClient *c);
 void watchCommand(redisClient *c);
